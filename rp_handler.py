@@ -8,9 +8,15 @@ from diffusers import (
     StableDiffusionXLImg2ImgPipeline,
     ControlNetModel, UniPCMultistepScheduler, DDIMScheduler
 )
+from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
+
+from controlnet_aux import ZoeDetector
+
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
 from runpod.serverless.modules.rp_logger import RunPodLogger
+
+from colors import ade_palette
 
 # --------------------------- КОНСТАНТЫ ----------------------------------- #
 MAX_SEED = np.iinfo(np.int32).max
@@ -23,35 +29,6 @@ logger = RunPodLogger()
 
 
 # ------------------------- ФУНКЦИИ-ПОМОЩНИКИ ----------------------------- #
-def filter_items(colors_list, items_list, items_to_remove):
-    keep_c, keep_i = [], []
-    for c, it in zip(colors_list, items_list):
-        if it not in items_to_remove:
-            keep_c.append(c)
-            keep_i.append(it)
-    return keep_c, keep_i
-
-
-def make_canny_condition(image):
-    image = np.array(image)
-    image = cv2.Canny(image, 100, 200)
-    image = image[:, :, None]
-    image = np.concatenate([image, image, image], axis=2)
-    image = Image.fromarray(image)
-    return image
-
-
-def resize_dimensions(dimensions, target_size):
-    w, h = dimensions
-    if w < target_size and h < target_size:
-        return dimensions
-    if w > h:
-        ar = h / w
-        return target_size, int(target_size * ar)
-    ar = w / h
-    return int(target_size * ar), target_size
-
-
 def url_to_pil(url: str) -> Image.Image:
     info = rp_file(url)
     return Image.open(info["file_path"]).convert("RGB")
@@ -64,12 +41,6 @@ def pil_to_b64(img: Image.Image) -> str:
 
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
-controlnet = ControlNetModel.from_pretrained(
-                "diffusers/controlnet-canny-sdxl-1.0",
-                torch_dtype=DTYPE
-            )
-
-
 cn_depth = ControlNetModel.from_pretrained(
     "diffusers/controlnet-zoe-depth-sdxl-1.0",
     torch_dtype=DTYPE)
@@ -107,6 +78,17 @@ REFINER.to(DEVICE)
 
 CURRENT_LORA = "None"
 
+zoe = ZoeDetector.from_pretrained("lllyasviel/Annotators").to(DEVICE)
+
+seg_image_processor = AutoImageProcessor.from_pretrained(
+    "nvidia/segformer-b5-finetuned-ade-640-640"
+)
+image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
+    "nvidia/segformer-b5-finetuned-ade-640-640"
+)
+
+image_segmentor.to(DEVICE)
+
 
 # ------------------------- ОСНОВНОЙ HANDLER ------------------------------ #
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -133,22 +115,40 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         refiner_scale = float(payload.get("refiner_scale", 7.5))
 
         # control scales
-        canny_scale = float(payload.get("canny_conditioning_scale", 0.4))
+        depth_scale = float(payload.get("depth_conditioning_scale", 0.9))
+        segm_scale = float(payload.get("segm_conditioning_scale", 0.45))
 
         # ---------- препроцессинг входа ------------
         image_pil = url_to_pil(image_url)
         orig_w, orig_h = image_pil.size
 
-        # input_image = image_pil.resize((new_w, new_h))
-        control_image = make_canny_condition(image_pil)
+        pixel = seg_image_processor(image_pil,
+                                    return_tensors="pt"
+                                    ).pixel_values
+        outputs = image_segmentor(pixel)
+
+        # ---- segmentation -------------------------------------------------------
+        seg = seg_image_processor.post_process_semantic_segmentation(
+            outputs, target_sizes=[image_pil.size[::-1]])[0]
+        palette = np.array(ade_palette())
+        color_seg = np.zeros((*seg.shape, 3), dtype=np.uint8)
+        for label, color in enumerate(palette):
+            color_seg[seg == label] = color
+        seg_pil = Image.fromarray(color_seg).convert("RGB")
+
+        # ---- depth --------------------------------------------------------------
+        depth_np = (zoe(image_pil) * 255).clip(0, 255).astype("uint8")
+        depth_cond = Image.fromarray(depth_np).resize(
+             (orig_w, orig_h)
+         ).convert("RGB")
 
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=control_image,
-            control_image=control_image,
-            controlnet_conditioning_scale=canny_scale,
+            image=[depth_cond, seg_pil],
+            control_image=[depth_cond, seg_pil],
+            controlnet_conditioning_scale=[depth_scale, segm_scale],
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,

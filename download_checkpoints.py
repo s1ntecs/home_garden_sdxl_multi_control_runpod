@@ -8,6 +8,9 @@ from diffusers import (
     AutoencoderKL,
     StableDiffusionXLImg2ImgPipeline
 )
+from controlnet_aux import ZoeDetector
+from transformers import (AutoImageProcessor,
+                          SegformerForSemanticSegmentation)
 
 # from huggingface_hub import hf_hub_download
 
@@ -37,10 +40,14 @@ def fetch_checkpoints() -> None:
 
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
-    controlnet = ControlNetModel.from_pretrained(
-            "diffusers/controlnet-canny-sdxl-1.0",
-            torch_dtype=DTYPE,
-        )
+    cn_depth = ControlNetModel.from_pretrained(
+        "diffusers/controlnet-zoe-depth-sdxl-1.0",
+        torch_dtype=DTYPE)
+
+    cn_seg = ControlNetModel.from_pretrained(
+        "SargeZT/sdxl-controlnet-seg",
+        torch_dtype=DTYPE)
+
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
                                         use_safetensors=True)
@@ -52,12 +59,13 @@ def get_pipeline():
         "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
         torch_dtype=torch.float16,
         add_watermarker=False,
-        controlnet=controlnet,
+        controlnet=[cn_depth, cn_seg],
         vae=vae,
         variant="fp16",
         use_safetensors=True,
         resume_download=True,
     ).to(DEVICE)
+    
     PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
         PIPELINE.scheduler.config)
 
@@ -67,7 +75,15 @@ def get_pipeline():
         variant="fp16" if DTYPE == torch.float16 else None,
         safety_checker=None,
     )
-    return
+    zoe = ZoeDetector.from_pretrained(
+        "lllyasviel/Annotators")
+
+    seg_image_processor = AutoImageProcessor.from_pretrained(
+        "nvidia/segformer-b5-finetuned-ade-640-640"
+    )
+    image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
+        "nvidia/segformer-b5-finetuned-ade-640-640"
+    )
 
 
 if __name__ == "__main__":
