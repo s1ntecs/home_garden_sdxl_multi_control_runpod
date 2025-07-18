@@ -1,0 +1,23 @@
+diffusers==0.34.0
+transformers==4.45.0
+xformers
+accelerate
+opencv-python
+scipy
+triton
+altair
+pandas
+controlnet-aux
+Pillow
+mediapipe
+
+huggingface-hub
+
+aiohttp
+pyyaml
+importlib_metadata
+peft
+
+# --- RunPod worker ---
+runpod                          
+omegaconf
