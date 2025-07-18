@@ -69,10 +69,20 @@ controlnet = ControlNetModel.from_pretrained(
                 torch_dtype=DTYPE
             )
 
+
+cn_depth = ControlNetModel.from_pretrained(
+    "diffusers/controlnet-zoe-depth-sdxl-1.0",
+    torch_dtype=DTYPE)
+
+cn_seg = ControlNetModel.from_pretrained(
+    "SargeZT/sdxl-controlnet-seg",
+    torch_dtype=DTYPE)
+
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
     # "RunDiffusion/Juggernaut-XL-v9",
-    "SG161222/RealVisXL_V5.0",
-    controlnet=controlnet,
+    # "SG161222/RealVisXL_V5.0",
+    "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
+    controlnet=[cn_depth, cn_seg],
     torch_dtype=DTYPE,
     variant="fp16" if DTYPE == torch.float16 else None,
     safety_checker=None,
