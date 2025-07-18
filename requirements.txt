@@ -20,5 +20,4 @@ peft
 
 # --- RunPod worker ---
 runpod                          
-omegaconf
-zoedepth 
+omegaconf 
