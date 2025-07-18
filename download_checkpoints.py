@@ -8,7 +8,7 @@ from diffusers import (
     AutoencoderKL,
     StableDiffusionXLImg2ImgPipeline
 )
-from controlnet_aux import ZoeDetector
+from controlnet_aux import ZoeDetector, LineartDetector
 from transformers import (AutoImageProcessor,
                           SegformerForSemanticSegmentation)
 
@@ -48,6 +48,10 @@ def get_pipeline():
         "SargeZT/sdxl-controlnet-seg",
         torch_dtype=DTYPE)
 
+    lineart_cn = ControlNetModel.from_pretrained(
+        "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
+        torch_dtype=torch.float16)
+
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
                                         use_safetensors=True)
@@ -84,6 +88,7 @@ def get_pipeline():
     image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
         "nvidia/segformer-b5-finetuned-ade-640-640"
     )
+    line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
 
 
 if __name__ == "__main__":

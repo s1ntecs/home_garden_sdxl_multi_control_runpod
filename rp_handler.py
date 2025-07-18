@@ -10,7 +10,7 @@ from diffusers import (
 )
 from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 
-from controlnet_aux import ZoeDetector
+from controlnet_aux import ZoeDetector, LineartDetector
 
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
@@ -49,11 +49,16 @@ cn_seg = ControlNetModel.from_pretrained(
     "SargeZT/sdxl-controlnet-seg",
     torch_dtype=DTYPE)
 
+lineart_cn = ControlNetModel.from_pretrained(
+    "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
+    torch_dtype=torch.float16)
+
+
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
     # "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",
     "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
-    controlnet=[cn_depth, cn_seg],
+    controlnet=[cn_depth, lineart_cn],
     torch_dtype=DTYPE,
     # variant="fp16" if DTYPE == torch.float16 else None,
     safety_checker=None,
@@ -79,6 +84,7 @@ REFINER.to(DEVICE)
 CURRENT_LORA = "None"
 
 zoe = ZoeDetector.from_pretrained("lllyasviel/Annotators").to(DEVICE)
+line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
 
 seg_image_processor = AutoImageProcessor.from_pretrained(
     "nvidia/segformer-b5-finetuned-ade-640-640"
@@ -142,12 +148,16 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
              (orig_w, orig_h)
          ).convert("RGB")
 
+        # ---- 5. Lineart карта (LineartStandardDetector / тот же что в обучении модели) ----
+        line_np = line_det(image_pil)
+        line_img = Image.fromarray(line_np)
+
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=[depth_cond, seg_pil],
-            control_image=[depth_cond, seg_pil],
+            image=[depth_cond, line_img],
+            control_image=[depth_cond, line_img],
             controlnet_conditioning_scale=[depth_scale, segm_scale],
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
