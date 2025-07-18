@@ -1,54 +1,60 @@
-import torch, numpy as np
+import torch
+import matplotlib
+import matplotlib.cm
+import numpy as np
 from PIL import Image
-from transformers import pipeline
 
-DEVICE = 0            # cuda:id  или  -1 для CPU
-IMG_PATH = "input.jpg"   # ваша исходная картинка
+torch.hub.help("intel-isl/MiDaS",
+               "DPT_BEiT_L_384",
+               force_reload=True)
+model_zoe_n = torch.hub.load("isl-org/ZoeDepth",
+                             "ZoeD_NK", pretrained=True).eval()
+model_zoe_n = model_zoe_n.to("cuda")
 
-# ---------- depth ----------------------------------------------------------
-depth_pipe = pipeline(
-    task="depth-estimation",
-    model="Intel/zoedepth-nyu",      # любая Zoe / DPT / DepthAnything
-    device=DEVICE
-)
 
-img = Image.open(IMG_PATH).convert("RGB")
-w, h = img.size
+def colorize(value, vmin=None, vmax=None, cmap='gray_r', invalid_val=-99, invalid_mask=None, background_color=(128, 128, 128, 255), gamma_corrected=False, value_transform=None):
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().numpy()
 
-depth = depth_pipe(img)["predicted_depth"][0]        # → torch 1×H×W
-depth = torch.nn.functional.interpolate(             # растягиваем до full-res
-           depth.unsqueeze(0), size=(h, w), mode="bicubic", align_corners=False
-         ).squeeze().cpu().numpy()
+    value = value.squeeze()
+    if invalid_mask is None:
+        invalid_mask = value == invalid_val
+    mask = np.logical_not(invalid_mask)
 
-# нормализуем и переводим в 3-канальный вид
-d_min, d_max = np.percentile(depth, (5, 95))
-depth_norm = (np.clip((depth - d_min) / (d_max - d_min), 0, 1) * 255).astype(np.uint8)
-depth_map = Image.fromarray(depth_norm).convert("RGB")
-depth_map.save("depth_map.png")
+    # normalize
+    vmin = np.percentile(value[mask],2) if vmin is None else vmin
+    vmax = np.percentile(value[mask],85) if vmax is None else vmax
+    if vmin != vmax:
+        value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+    else:
+        # Avoid 0-division
+        value = value * 0.
 
-# ---------- semantic segmentation -----------------------------------------
-seg_pipe = pipeline(
-    task="image-segmentation",
-    model="nvidia/segformer-b0-finetuned-ade-512-512",   # ADE20K, 150 классов
-    device=DEVICE
-)                                                       # :contentReference[oaicite:1]{index=1}
+    # squeeze last dim if it exists
+    # grey out the invalid values
 
-segments = seg_pipe(img)
+    value[invalid_mask] = np.nan
+    cmapper = matplotlib.cm.get_cmap(cmap)
+    if value_transform:
+        value = value_transform(value)
+        # value = value / value.max()
+    value = cmapper(value, bytes=True)  # (nxmx4)
 
-# создаём карту с id-классами
-label_map = np.zeros((h, w), dtype=np.uint8)
-for part in segments:
-    mask = np.array(part["mask"])           # 255 = входит, 0 = нет
-    class_id = part["label_id"]             # >= 1
-    label_map[mask == 255] = class_id
+    # img = value[:, :, :]
+    img = value[...]
+    img[invalid_mask] = background_color
 
-# ADE20K-палитра (150 цветов). Можно импортировать готовый список,
-# например из  controlnet_aux.oneformer. Здесь — короткий вариант:
-ADE20K_COLORS = np.loadtxt(
-    "https://raw.githubusercontent.com/CSAILVision/ADE20K/master/ade20k_colors.txt",
-    dtype=np.uint8
-)[:150]                                      # (150,3)  R,G,B
+    # gamma correction
+    img = img / 255
+    img = np.power(img, 2.2)
+    img = img * 255
+    img = img.astype(np.uint8)
+    img = Image.fromarray(img)
+    return img
 
-seg_rgb = ADE20K_COLORS[label_map]           # → H×W×3
-seg_map = Image.fromarray(seg_rgb)
-seg_map.save("seg_map.png")
+
+def get_zoe_depth_map(image):
+    with torch.autocast("cuda", enabled=True):
+        depth = model_zoe_n.infer_pil(image)
+    depth = colorize(depth, cmap="gray_r")
+    return depth
