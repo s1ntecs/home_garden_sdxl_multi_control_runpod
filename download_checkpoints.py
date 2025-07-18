@@ -57,14 +57,14 @@ def get_pipeline():
         # "SG161222/RealVisXL_V5.0",
         # "misri/cyberrealisticPony_v90Alt1",
         "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
-        torch_dtype=torch.float16,
+        torch_dtype=DTYPE,
         add_watermarker=False,
         controlnet=[cn_depth, cn_seg],
         vae=vae,
         # variant="fp16",
         use_safetensors=True,
         resume_download=True,
-    ).to(DEVICE)
+    )
     
     PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
         PIPELINE.scheduler.config)
