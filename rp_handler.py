@@ -57,7 +57,7 @@ cn_seg = ControlNetModel.from_pretrained(
 
 
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
-    "RunDiffusion/Juggernaut-XL-v9",
+    # "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",
     "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
     controlnet=[cn_depth, cn_seg],
