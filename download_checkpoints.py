@@ -8,7 +8,7 @@ from diffusers import (
     AutoencoderKL,
     StableDiffusionXLImg2ImgPipeline
 )
-from controlnet_aux import ZoeDetector, LineartDetector
+from controlnet_aux import ZoeDetector
 from transformers import (AutoImageProcessor,
                           SegformerForSemanticSegmentation)
 
@@ -48,7 +48,7 @@ def get_pipeline():
     cn_seg = ControlNetModel.from_pretrained(
         "SargeZT/sdxl-controlnet-seg",
         torch_dtype=DTYPE)
-
+    controlnet = [cn_depth, cn_seg]
     # lineart_cn = ControlNetModel.from_pretrained(
     #     "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
     #     torch_dtype=torch.float16)
@@ -56,37 +56,38 @@ def get_pipeline():
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
                                         use_safetensors=True)
-
+    print("LOADED VAE")
     PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
         # "RunDiffusion/Juggernaut-XL-v9",
         # "SG161222/RealVisXL_V5.0",
         # "misri/cyberrealisticPony_v90Alt1",
         "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
-        torch_dtype=DTYPE,
+        torch_dtype=torch.float16,
         add_watermarker=False,
-        controlnet=[cn_depth, cn_seg],
+        controlnet=controlnet,
         vae=vae,
         # variant="fp16",
         use_safetensors=True,
         resume_download=True,
-    )
-
+    ).to(DEVICE)
+    print("LOADED PIPELINE")
     PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
         PIPELINE.scheduler.config)
 
     StableDiffusionXLImg2ImgPipeline.from_pretrained(
         "stabilityai/stable-diffusion-xl-refiner-1.0",
         torch_dtype=DTYPE,
-        variant="fp16" if DTYPE == torch.float16 else None,
+        variant="fp16",
         safety_checker=None,
     )
-    zoe = ZoeDetector.from_pretrained(
+    print("LOADED REFINER")
+    ZoeDetector.from_pretrained(
         "lllyasviel/Annotators")
 
-    seg_image_processor = AutoImageProcessor.from_pretrained(
+    AutoImageProcessor.from_pretrained(
         "nvidia/segformer-b5-finetuned-ade-640-640"
     )
-    image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
+    SegformerForSemanticSegmentation.from_pretrained(
         "nvidia/segformer-b5-finetuned-ade-640-640"
     )
     # line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
