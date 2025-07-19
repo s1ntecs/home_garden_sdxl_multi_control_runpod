@@ -42,7 +42,8 @@ def fetch_checkpoints() -> None:
 def get_pipeline():
     cn_depth = ControlNetModel.from_pretrained(
         "diffusers/controlnet-zoe-depth-sdxl-1.0",
-        torch_dtype=DTYPE)
+        torch_dtype=DTYPE
+        )
 
     cn_seg = ControlNetModel.from_pretrained(
         "SargeZT/sdxl-controlnet-seg",
@@ -65,7 +66,7 @@ def get_pipeline():
         add_watermarker=False,
         controlnet=[cn_depth, cn_seg],
         vae=vae,
-        variant="fp16",
+        # variant="fp16",
         use_safetensors=True,
         resume_download=True,
     )
