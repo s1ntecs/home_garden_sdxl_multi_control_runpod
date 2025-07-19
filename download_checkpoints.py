@@ -8,7 +8,7 @@ from diffusers import (
     AutoencoderKL,
     StableDiffusionXLImg2ImgPipeline
 )
-from controlnet_aux import ZoeDetector
+from controlnet_aux import MidasDetector
 from transformers import (AutoImageProcessor,
                           SegformerForSemanticSegmentation)
 
@@ -40,15 +40,16 @@ def fetch_checkpoints() -> None:
 
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
-    cn_depth = ControlNetModel.from_pretrained(
-        "diffusers/controlnet-zoe-depth-sdxl-1.0",
-        torch_dtype=DTYPE
-        )
+    controlnet = ControlNetModel.from_pretrained(
+        "diffusers/controlnet-depth-sdxl-1.0",
+        torch_dtype=DTYPE,
+        use_safetensors=True
+    )
 
     cn_seg = ControlNetModel.from_pretrained(
         "SargeZT/sdxl-controlnet-seg",
         torch_dtype=DTYPE)
-    controlnet = [cn_depth, cn_seg]
+    controlnet = [controlnet, cn_seg]
     # lineart_cn = ControlNetModel.from_pretrained(
     #     "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
     #     torch_dtype=torch.float16)
@@ -77,12 +78,11 @@ def get_pipeline():
     StableDiffusionXLImg2ImgPipeline.from_pretrained(
         "stabilityai/stable-diffusion-xl-refiner-1.0",
         torch_dtype=DTYPE,
-        variant="fp16",
+        variant="fp16" if DTYPE == torch.float16 else None,
         safety_checker=None,
     )
     print("LOADED REFINER")
-    ZoeDetector.from_pretrained(
-        "lllyasviel/Annotators")
+    MidasDetector.from_pretrained("lllyasviel/ControlNet")
 
     AutoImageProcessor.from_pretrained(
         "nvidia/segformer-b5-finetuned-ade-640-640"

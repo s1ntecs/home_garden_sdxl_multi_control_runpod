@@ -10,7 +10,7 @@ from diffusers import (
 )
 from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 
-from controlnet_aux import ZoeDetector, LineartDetector
+from controlnet_aux import MidasDetector
 
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
@@ -42,8 +42,10 @@ def pil_to_b64(img: Image.Image) -> str:
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
 cn_depth = ControlNetModel.from_pretrained(
-    "diffusers/controlnet-zoe-depth-sdxl-1.0",
-    torch_dtype=DTYPE)
+    "diffusers/controlnet-depth-sdxl-1.0",
+    torch_dtype=DTYPE,
+    use_safetensors=True
+)
 
 cn_seg = ControlNetModel.from_pretrained(
     "SargeZT/sdxl-controlnet-seg",
@@ -83,7 +85,7 @@ REFINER.to(DEVICE)
 
 CURRENT_LORA = "None"
 
-zoe = ZoeDetector.from_pretrained("lllyasviel/Annotators").to(DEVICE)
+midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
 # line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
 
 seg_image_processor = AutoImageProcessor.from_pretrained(
@@ -155,10 +157,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         seg_pil = Image.fromarray(color_seg).convert("RGB")
 
         # ---- depth --------------------------------------------------------------
-        depth_np = (zoe(image_pil) * 255).clip(0, 255).astype("uint8")
-        depth_cond = Image.fromarray(depth_np).resize(
-             (orig_w, orig_h)
-         ).convert("RGB")
+        depth_cond = midas(image_pil)
 
         # ---- 5. Lineart карта (LineartStandardDetector / тот же что в обучении модели) ----
         # line_np = line_det(image_pil)
