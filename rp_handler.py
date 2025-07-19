@@ -57,7 +57,7 @@ cn_seg = ControlNetModel.from_pretrained(
 PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
     "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",
-    # "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
+    "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
     controlnet=[cn_depth, cn_seg],
     torch_dtype=DTYPE,
     # variant="fp16" if DTYPE == torch.float16 else None,
@@ -108,21 +108,33 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         if not prompt:
             return {"error": "'prompt' is required"}
 
-        negative_prompt = payload.get("negative_prompt", "")
-        guidance_scale = float(payload.get("guidance_scale", 7.5))
-        steps = min(int(payload.get("steps", MAX_STEPS)), MAX_STEPS)
+        negative_prompt = payload.get(
+            "negative_prompt", "")
+        guidance_scale = float(payload.get(
+            "guidance_scale", 7.5))
+        steps = min(int(payload.get(
+            "steps", MAX_STEPS)),
+                    MAX_STEPS)
 
-        seed = int(payload.get("seed", random.randint(0, MAX_SEED)))
-        generator = torch.Generator(device=DEVICE).manual_seed(seed)
+        seed = int(payload.get(
+            "seed",
+            random.randint(0, MAX_SEED)))
+        generator = torch.Generator(
+            device=DEVICE).manual_seed(seed)
 
         # refiner
-        refiner_strength = float(payload.get("refiner_strength", 0.2))
-        refiner_steps = int(payload.get("refiner_steps", 15))
-        refiner_scale = float(payload.get("refiner_scale", 7.5))
+        refiner_strength = float(payload.get(
+            "refiner_strength", 0.2))
+        refiner_steps = int(payload.get(
+            "refiner_steps", 15))
+        refiner_scale = float(payload.get(
+            "refiner_scale", 7.5))
 
         # control scales
-        depth_scale = float(payload.get("depth_conditioning_scale", 0.9))
-        segm_scale = float(payload.get("segm_conditioning_scale", 0.45))
+        depth_scale = float(payload.get(
+            "depth_conditioning_scale", 0.9))
+        segm_scale = float(payload.get(
+            "segm_conditioning_scale", 0.45))
 
         # ---------- препроцессинг входа ------------
         image_pil = url_to_pil(image_url)

@@ -58,10 +58,10 @@ def get_pipeline():
                                         use_safetensors=True)
 
     PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
-        "RunDiffusion/Juggernaut-XL-v9",
+        # "RunDiffusion/Juggernaut-XL-v9",
         # "SG161222/RealVisXL_V5.0",
         # "misri/cyberrealisticPony_v90Alt1",
-        # "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
+        "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
         torch_dtype=DTYPE,
         add_watermarker=False,
         controlnet=[cn_depth, cn_seg],
