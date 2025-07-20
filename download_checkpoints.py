@@ -78,8 +78,8 @@ def get_pipeline():
 
     StableDiffusionXLImg2ImgPipeline.from_pretrained(
         "stabilityai/stable-diffusion-xl-refiner-1.0",
-        torch_dtype=DTYPE,
-        variant="fp16" if DTYPE == torch.float16 else None,
+        torch_dtype=torch.float16,
+        variant="fp16",
         safety_checker=None,
     )
     # print("LOADED REFINER")
