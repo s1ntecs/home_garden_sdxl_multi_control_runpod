@@ -145,11 +145,13 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         pixel = seg_image_processor(image_pil,
                                     return_tensors="pt"
                                     ).pixel_values
+        pixel = pixel.to(DEVICE)
         outputs = image_segmentor(pixel)
 
         # ---- segmentation -------------------------------------------------------
         seg = seg_image_processor.post_process_semantic_segmentation(
-            outputs, target_sizes=[image_pil.size[::-1]])[0]
+            outputs, target_sizes=[image_pil.size[::-1]]
+        )[0]
         palette = np.array(ade_palette())
         color_seg = np.zeros((*seg.shape, 3), dtype=np.uint8)
         for label, color in enumerate(palette):
