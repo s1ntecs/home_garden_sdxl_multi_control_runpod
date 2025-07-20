@@ -4,7 +4,7 @@ from typing import Any, Dict
 from PIL import Image
 
 from diffusers import (
-    StableDiffusionXLControlNetPipeline,
+    StableDiffusionXLControlNetImg2ImgPipeline,
     StableDiffusionXLImg2ImgPipeline,
     ControlNetModel, UniPCMultistepScheduler, DDIMScheduler
 )
@@ -62,16 +62,17 @@ cn_depth = ControlNetModel.from_pretrained(
     use_safetensors=True
 )
 
-cn_seg = ControlNetModel.from_pretrained(
-    "SargeZT/sdxl-controlnet-seg",
-    torch_dtype=DTYPE)
+# cn_seg = ControlNetModel.from_pretrained(
+#     "SargeZT/sdxl-controlnet-seg",
+#     torch_dtype=DTYPE)
 
 
-PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
+PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
     # "RunDiffusion/Juggernaut-XL-v9",
     # "SG161222/RealVisXL_V5.0",
     "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
-    controlnet=[cn_depth, cn_seg],
+    # controlnet=[cn_depth, cn_seg],
+    controlnet=cn_depth,
     torch_dtype=DTYPE,
     # variant="fp16" if DTYPE == torch.float16 else None,
     safety_checker=None,
@@ -181,6 +182,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         negative_prompt = payload.get(
             "negative_prompt", "")
+        img_strength = payload.get(
+            "img_strength", "")
         guidance_scale = float(payload.get(
             "guidance_scale", 7.5))
         steps = min(int(payload.get(
@@ -204,44 +207,31 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         # control scales
         depth_scale = float(payload.get(
             "depth_conditioning_scale", 0.9))
-        segm_scale = float(payload.get(
-            "segm_conditioning_scale", 0.45))
+        # segm_scale = float(payload.get(
+        #     "segm_conditioning_scale", 0.45))
 
         # ---------- препроцессинг входа ------------
 
         image_pil = url_to_pil(image_url)
         orig_w, orig_h = image_pil.size
 
-        work_w, work_h = compute_work_resolution(orig_w, orig_h, 1024)
-        base_img = image_pil.resize((work_w, work_h), Image.Resampling.LANCZOS)
-
-        # ---- segmentation -------------------------------------------------------
-        # new_width, new_height = resize_dimensions(image_pil.size, 768)
-        # input_image = image_pil.resize((new_width, new_height))
-
-        seg_pil = segment_image(base_img)
-
-        # real_seg = np.array(
-        #     segment_image(input_image)
-        # )
-
-        # seg_pil = Image.fromarray(
-        #     real_seg).convert("RGB")
+        # seg_pil = segment_image(image_pil)
 
         # ---- depth --------------------------------------------------------------
-        depth_cond = midas(base_img)
+        depth_cond = midas(image_pil)
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            image=[depth_cond, seg_pil],
-            control_image=[depth_cond, seg_pil],
-            # image=[depth_cond, line_img],
-            # control_image=[depth_cond, line_img],
-            controlnet_conditioning_scale=[depth_scale, segm_scale],
+            # image=[depth_cond, seg_pil],
+            # control_image=[depth_cond, seg_pil],
+            image=image_pil,
+            control_image=depth_cond,
+            controlnet_conditioning_scale=depth_scale,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,
+            strength=img_strength,
         ).images
 
         final = []

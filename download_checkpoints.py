@@ -4,7 +4,7 @@ import torch
 from diffusers import (
     ControlNetModel,
     UniPCMultistepScheduler,
-    StableDiffusionXLControlNetPipeline,
+    StableDiffusionXLControlNetImg2ImgPipeline,
     AutoencoderKL,
     StableDiffusionXLImg2ImgPipeline
 )
@@ -46,11 +46,11 @@ def get_pipeline():
         use_safetensors=True
     )
 
-    cn_seg = ControlNetModel.from_pretrained(
-        "SargeZT/sdxl-controlnet-seg",
-        torch_dtype=torch.float16
-    )
-    controlnet = [controlnet, cn_seg]
+    # cn_seg = ControlNetModel.from_pretrained(
+    #     "SargeZT/sdxl-controlnet-seg",
+    #     torch_dtype=torch.float16
+    # )
+    # controlnet = [controlnet, cn_seg]
     # lineart_cn = ControlNetModel.from_pretrained(
     #     "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
     #     torch_dtype=torch.float16)
@@ -59,7 +59,7 @@ def get_pipeline():
                                         torch_dtype=torch.float16,
                                         use_safetensors=True)
     print("LOADED VAE")
-    PIPELINE = StableDiffusionXLControlNetPipeline.from_pretrained(
+    PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
         # "RunDiffusion/Juggernaut-XL-v9",
         # "SG161222/RealVisXL_V5.0",
         # "misri/cyberrealisticPony_v90Alt1",
@@ -83,14 +83,16 @@ def get_pipeline():
         safety_checker=None,
     )
     # print("LOADED REFINER")
-    MidasDetector.from_pretrained("lllyasviel/ControlNet")
+    MidasDetector.from_pretrained(
+        "lllyasviel/ControlNet"
+    )
 
-    AutoImageProcessor.from_pretrained(
-        "nvidia/segformer-b5-finetuned-ade-640-640"
-    )
-    SegformerForSemanticSegmentation.from_pretrained(
-        "nvidia/segformer-b5-finetuned-ade-640-640"
-    )
+    # AutoImageProcessor.from_pretrained(
+    #     "nvidia/segformer-b5-finetuned-ade-640-640"
+    # )
+    # SegformerForSemanticSegmentation.from_pretrained(
+    #     "nvidia/segformer-b5-finetuned-ade-640-640"
+    # )
     # line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
 
 
