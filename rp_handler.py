@@ -40,6 +40,21 @@ def pil_to_b64(img: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def round_to_multiple(x, m=8):
+    return (x // m) * m
+
+
+def compute_work_resolution(w, h, max_side=1024):
+    # масштабируем так, чтобы большая сторона <= max_side
+    scale = min(max_side / max(w, h), 1.0)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    # выравниваем до кратных 8
+    new_w = round_to_multiple(new_w, 8)
+    new_h = round_to_multiple(new_h, 8)
+    return max(new_w, 8), max(new_h, 8)
+
+
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
 cn_depth = ControlNetModel.from_pretrained(
     "diffusers/controlnet-depth-sdxl-1.0",
@@ -197,19 +212,24 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         image_pil = url_to_pil(image_url)
         orig_w, orig_h = image_pil.size
 
+        work_w, work_h = compute_work_resolution(orig_w, orig_h, 1024)
+        base_img = image_pil.resize((work_w, work_h), Image.Resampling.LANCZOS)
+
         # ---- segmentation -------------------------------------------------------
-        new_width, new_height = resize_dimensions(image_pil.size, 768)
-        input_image = image_pil.resize((new_width, new_height))
+        # new_width, new_height = resize_dimensions(image_pil.size, 768)
+        # input_image = image_pil.resize((new_width, new_height))
 
-        real_seg = np.array(
-            segment_image(input_image)
-        )
+        seg_pil = segment_image(base_img)
 
-        seg_pil = Image.fromarray(
-            real_seg).convert("RGB")
+        # real_seg = np.array(
+        #     segment_image(input_image)
+        # )
+
+        # seg_pil = Image.fromarray(
+        #     real_seg).convert("RGB")
 
         # ---- depth --------------------------------------------------------------
-        depth_cond = midas(image_pil)
+        depth_cond = midas(base_img)
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
@@ -223,7 +243,6 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             guidance_scale=guidance_scale,
             generator=generator,
         ).images
-
 
         final = []
         for im in images:
