@@ -74,14 +74,14 @@ PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
 PIPELINE.enable_xformers_memory_efficient_attention()
 PIPELINE.to(DEVICE)
 
-REFINER = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-    "stabilityai/stable-diffusion-xl-refiner-1.0",
-    torch_dtype=DTYPE,
-    variant="fp16" if DTYPE == torch.float16 else None,
-    safety_checker=None,
-)
-REFINER.scheduler = DDIMScheduler.from_config(REFINER.scheduler.config)
-REFINER.to(DEVICE)
+# REFINER = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+#     "stabilityai/stable-diffusion-xl-refiner-1.0",
+#     torch_dtype=DTYPE,
+#     variant="fp16" if DTYPE == torch.float16 else None,
+#     safety_checker=None,
+# )
+# REFINER.scheduler = DDIMScheduler.from_config(REFINER.scheduler.config)
+# REFINER.to(DEVICE)
 
 CURRENT_LORA = "None"
 
@@ -95,7 +95,65 @@ image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
     "nvidia/segformer-b5-finetuned-ade-640-640"
 )
 
-image_segmentor.to(DEVICE)
+
+@torch.inference_mode()
+@torch.autocast(DEVICE)
+def segment_image(image):
+    """
+    Segments an image using a semantic segmentation model.
+
+    Args:
+        image (PIL.Image): The input image to be segmented.
+        image_processor (AutoImageProcessor): The processor to prepare the
+            image for segmentation.
+        image_segmentor (SegformerForSemanticSegmentation): The semantic
+            segmentation model used to identify different segments in the img.
+
+    Returns:
+        Image: The segmented image with each segment colored differently based
+            on its identified class.
+    """
+    pixel_values = seg_image_processor(image, return_tensors="pt").pixel_values
+    with torch.no_grad():
+        outputs = image_segmentor(pixel_values)
+
+    seg = seg_image_processor.post_process_semantic_segmentation(
+        outputs, target_sizes=[image.size[::-1]]
+    )[0]
+    color_seg = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8)
+    palette = np.array(ade_palette())
+
+    for label, color in enumerate(palette):
+        color_seg[seg == label, :] = color
+
+    color_seg = color_seg.astype(np.uint8)
+    seg_image = Image.fromarray(color_seg).convert("RGB")
+
+    return seg_image
+
+
+def resize_dimensions(dimensions, target_size):
+    """
+    Resize PIL to target size while maintaining aspect ratio
+    If smaller than target size leave it as is
+    """
+    width, height = dimensions
+
+    # Check if both dimensions are smaller than the target size
+    if width < target_size and height < target_size:
+        return dimensions
+
+    # Determine the larger side
+    if width > height:
+        # Calculate the aspect ratio
+        aspect_ratio = height / width
+        # Resize dimensions
+        return (target_size, int(target_size * aspect_ratio))
+    else:
+        # Calculate the aspect ratio
+        aspect_ratio = width / height
+        # Resize dimensions
+        return (int(target_size * aspect_ratio), target_size)
 
 
 # ------------------------- ОСНОВНОЙ HANDLER ------------------------------ #
@@ -139,24 +197,20 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             "segm_conditioning_scale", 0.45))
 
         # ---------- препроцессинг входа ------------
+
         image_pil = url_to_pil(image_url)
         orig_w, orig_h = image_pil.size
 
-        pixel = seg_image_processor(image_pil,
-                                    return_tensors="pt"
-                                    ).pixel_values
-        pixel = pixel.to(DEVICE)
-        outputs = image_segmentor(pixel)
-
         # ---- segmentation -------------------------------------------------------
-        seg = seg_image_processor.post_process_semantic_segmentation(
-            outputs, target_sizes=[image_pil.size[::-1]]
-        )[0]
-        palette = np.array(ade_palette())
-        color_seg = np.zeros((*seg.shape, 3), dtype=np.uint8)
-        for label, color in enumerate(palette):
-            color_seg[seg == label] = color
-        seg_pil = Image.fromarray(color_seg).convert("RGB")
+        new_width, new_height = resize_dimensions(image_pil.size, 768)
+        input_image = image_pil.resize((new_width, new_height))
+
+        real_seg = np.array(
+            segment_image(input_image)
+        )
+
+        seg_pil = Image.fromarray(
+            real_seg).convert("RGB")
 
         # ---- depth --------------------------------------------------------------
         depth_cond = midas(image_pil)
@@ -179,18 +233,20 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             generator=generator,
         ).images
 
-        final = []
-        for im in images:
-            im = im.resize((orig_w, orig_h), Image.Resampling.LANCZOS).convert("RGB")
-            ref = REFINER(
-                prompt=prompt, image=im, strength=refiner_strength,
-                num_inference_steps=refiner_steps, guidance_scale=refiner_scale
-            ).images[0]
-            final.append(ref)
-        torch.cuda.empty_cache()
+
+        # final = []
+        # for im in images:
+        #     im = im.resize((orig_w, orig_h),
+        #                    Image.Resampling.LANCZOS).convert("RGB")
+        #     ref = REFINER(
+        #         prompt=prompt, image=im, strength=refiner_strength,
+        #         num_inference_steps=refiner_steps, guidance_scale=refiner_scale
+        #     ).images[0]
+        #     final.append(ref)
+        # torch.cuda.empty_cache()
 
         return {
-            "images_base64": [pil_to_b64(i) for i in final],
+            "images_base64": [pil_to_b64(i) for i in images],
             "time": round(time.time() - job["created"], 2) if "created" in job else None,
             "steps": steps, "seed": seed,
             "lora": CURRENT_LORA if CURRENT_LORA != "None" else None,
