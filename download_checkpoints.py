@@ -42,13 +42,14 @@ def fetch_checkpoints() -> None:
 def get_pipeline():
     controlnet = ControlNetModel.from_pretrained(
         "diffusers/controlnet-depth-sdxl-1.0",
-        torch_dtype=DTYPE,
+        torch_dtype=torch.float16,
         use_safetensors=True
     )
 
     cn_seg = ControlNetModel.from_pretrained(
         "SargeZT/sdxl-controlnet-seg",
-        torch_dtype=DTYPE)
+        torch_dtype=torch.float16
+    )
     controlnet = [controlnet, cn_seg]
     # lineart_cn = ControlNetModel.from_pretrained(
     #     "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
