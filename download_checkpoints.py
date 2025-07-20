@@ -75,12 +75,12 @@ def get_pipeline():
     PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
         PIPELINE.scheduler.config)
 
-    # StableDiffusionXLImg2ImgPipeline.from_pretrained(
-    #     "stabilityai/stable-diffusion-xl-refiner-1.0",
-    #     torch_dtype=DTYPE,
-    #     variant="fp16" if DTYPE == torch.float16 else None,
-    #     safety_checker=None,
-    # )
+    StableDiffusionXLImg2ImgPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-xl-refiner-1.0",
+        torch_dtype=DTYPE,
+        variant="fp16" if DTYPE == torch.float16 else None,
+        safety_checker=None,
+    )
     # print("LOADED REFINER")
     MidasDetector.from_pretrained("lllyasviel/ControlNet")
 
