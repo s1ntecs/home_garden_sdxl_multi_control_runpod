@@ -40,15 +40,6 @@ def pil_to_b64(img: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def make_canny_condition(image):
-    image = np.array(image)
-    image = cv2.Canny(image, 100, 200)
-    image = image[:, :, None]
-    image = np.concatenate([image, image, image], axis=2)
-    image = Image.fromarray(image)
-    return image
-
-
 def round_to_multiple(x, m=8):
     return (x // m) * m
 
@@ -65,16 +56,11 @@ def compute_work_resolution(w, h, max_side=1024):
 
 
 # ------------------------- ЗАГРУЗКА МОДЕЛЕЙ ------------------------------ #
-# controlnet = ControlNetModel.from_pretrained(
-#     "diffusers/controlnet-depth-sdxl-1.0",
-#     torch_dtype=DTYPE,
-#     use_safetensors=True
-# )
-
-controlnet = ControlNetModel.from_pretrained(
-                "diffusers/controlnet-canny-sdxl-1.0",
-                torch_dtype=DTYPE
-            )
+cn_depth = ControlNetModel.from_pretrained(
+    "diffusers/controlnet-depth-sdxl-1.0",
+    torch_dtype=DTYPE,
+    use_safetensors=True
+)
 
 # cn_seg = ControlNetModel.from_pretrained(
 #     "SargeZT/sdxl-controlnet-seg",
@@ -86,7 +72,7 @@ PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
     # "SG161222/RealVisXL_V5.0",
     "John6666/epicrealism-xl-vxvii-crystal-clear-realism-sdxl",
     # controlnet=[cn_depth, cn_seg],
-    controlnet=controlnet,
+    controlnet=cn_depth,
     torch_dtype=DTYPE,
     # variant="fp16" if DTYPE == torch.float16 else None,
     safety_checker=None,
@@ -111,14 +97,51 @@ REFINER.to(DEVICE)
 
 CURRENT_LORA = "None"
 
-# midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
+midas = MidasDetector.from_pretrained("lllyasviel/ControlNet")
+# line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
 
-# seg_image_processor = AutoImageProcessor.from_pretrained(
-#     "nvidia/segformer-b5-finetuned-ade-640-640"
-# )
-# image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
-#     "nvidia/segformer-b5-finetuned-ade-640-640"
-# )
+seg_image_processor = AutoImageProcessor.from_pretrained(
+    "nvidia/segformer-b5-finetuned-ade-640-640"
+)
+image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
+    "nvidia/segformer-b5-finetuned-ade-640-640"
+)
+
+
+@torch.inference_mode()
+@torch.autocast(DEVICE)
+def segment_image(image):
+    """
+    Segments an image using a semantic segmentation model.
+
+    Args:
+        image (PIL.Image): The input image to be segmented.
+        image_processor (AutoImageProcessor): The processor to prepare the
+            image for segmentation.
+        image_segmentor (SegformerForSemanticSegmentation): The semantic
+            segmentation model used to identify different segments in the img.
+
+    Returns:
+        Image: The segmented image with each segment colored differently based
+            on its identified class.
+    """
+    pixel_values = seg_image_processor(image, return_tensors="pt").pixel_values
+    with torch.no_grad():
+        outputs = image_segmentor(pixel_values)
+
+    seg = seg_image_processor.post_process_semantic_segmentation(
+        outputs, target_sizes=[image.size[::-1]]
+    )[0]
+    color_seg = np.zeros((seg.shape[0], seg.shape[1], 3), dtype=np.uint8)
+    palette = np.array(ade_palette())
+
+    for label, color in enumerate(palette):
+        color_seg[seg == label, :] = color
+
+    color_seg = color_seg.astype(np.uint8)
+    seg_image = Image.fromarray(color_seg).convert("RGB")
+
+    return seg_image
 
 
 def resize_dimensions(dimensions, target_size):
@@ -188,21 +211,23 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
 
         image_pil = url_to_pil(image_url)
 
-        # ---- canny --------------------------------------------------------------
-        control_image = make_canny_condition(image_pil)
+        # ---- depth --------------------------------------------------------------
+        depth_cond = midas(image_pil)
 
         orig_w, orig_h = image_pil.size
-        work_w, work_h = compute_work_resolution(orig_w, orig_h, TARGET_RES)
+        work_w, work_h = compute_work_resolution(orig_w, orig_h, TARGET_RES)  # already in your code
 
         # resize *both* the init image and the control image to the same, /8-aligned size
         image_pil = image_pil.resize((work_w, work_h), Image.Resampling.LANCZOS)
-        canny_cond = control_image.resize((work_w, work_h), Image.Resampling.LANCZOS)
+        depth_cond = depth_cond.resize((work_w, work_h), Image.Resampling.LANCZOS)
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
             negative_prompt=negative_prompt,
+            # image=[depth_cond, seg_pil],
+            # control_image=[depth_cond, seg_pil],
             image=image_pil,
-            control_image=canny_cond,
+            control_image=depth_cond,
             controlnet_conditioning_scale=depth_scale,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
