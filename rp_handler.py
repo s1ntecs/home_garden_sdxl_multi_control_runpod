@@ -183,7 +183,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         negative_prompt = payload.get(
             "negative_prompt", "")
         img_strength = payload.get(
-            "img_strength", "")
+            "img_strength", 4.0)
         guidance_scale = float(payload.get(
             "guidance_scale", 7.5))
         steps = min(int(payload.get(
@@ -213,12 +213,18 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         # ---------- препроцессинг входа ------------
 
         image_pil = url_to_pil(image_url)
-        orig_w, orig_h = image_pil.size
 
         # seg_pil = segment_image(image_pil)
 
         # ---- depth --------------------------------------------------------------
         depth_cond = midas(image_pil)
+
+        orig_w, orig_h = image_pil.size
+        work_w, work_h = compute_work_resolution(orig_w, orig_h, TARGET_RES)  # already in your code
+
+        # resize *both* the init image and the control image to the same, /8-aligned size
+        image_pil = image_pil.resize((work_w, work_h), Image.Resampling.LANCZOS)
+        depth_cond = depth_cond.resize((work_w, work_h), Image.Resampling.LANCZOS)
         # ------------------ генерация ---------------- #
         images = PIPELINE(
             prompt=prompt,
