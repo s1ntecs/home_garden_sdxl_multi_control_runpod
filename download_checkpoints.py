@@ -40,10 +40,14 @@ def fetch_checkpoints() -> None:
 
 # ------------------------- пайплайн -------------------------
 def get_pipeline():
+    # controlnet = ControlNetModel.from_pretrained(
+    #     "diffusers/controlnet-depth-sdxl-1.0",
+    #     torch_dtype=torch.float16,
+    #     use_safetensors=True
+    # )
     controlnet = ControlNetModel.from_pretrained(
-        "diffusers/controlnet-depth-sdxl-1.0",
-        torch_dtype=torch.float16,
-        use_safetensors=True
+        "diffusers/controlnet-canny-sdxl-1.0",
+        torch_dtype=DTYPE,
     )
 
     # cn_seg = ControlNetModel.from_pretrained(
