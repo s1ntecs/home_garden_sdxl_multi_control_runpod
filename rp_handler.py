@@ -182,8 +182,12 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             "refiner_scale", 7.5))
 
         # control scales
-        depth_scale = float(payload.get(
-            "depth_conditioning_scale", 0.9))
+        canny_scale = float(payload.get(
+            "canny_conditioning_scale", 0.9))
+        canny_guidance_start = float(payload.get(
+            "canny_guidance_start", 0.9))
+        canny_guidance_end = float(payload.get(
+            "canny_guidance_end", 0.9))
         # ---------- препроцессинг входа ------------
 
         image_pil = url_to_pil(image_url)
@@ -203,7 +207,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             negative_prompt=negative_prompt,
             image=image_pil,
             control_image=canny_cond,
-            controlnet_conditioning_scale=depth_scale,
+            controlnet_conditioning_scale=canny_scale,
+            control_guidance_start=canny_guidance_start,
+            control_guidance_end=canny_guidance_end,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,

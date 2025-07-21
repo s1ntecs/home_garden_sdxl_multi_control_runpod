@@ -87,9 +87,9 @@ def get_pipeline():
         safety_checker=None,
     )
     # print("LOADED REFINER")
-    MidasDetector.from_pretrained(
-        "lllyasviel/ControlNet"
-    )
+    # MidasDetector.from_pretrained(
+    #     "lllyasviel/ControlNet"
+    # )
 
     # AutoImageProcessor.from_pretrained(
     #     "nvidia/segformer-b5-finetuned-ade-640-640"
