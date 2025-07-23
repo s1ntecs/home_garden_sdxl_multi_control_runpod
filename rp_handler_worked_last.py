@@ -4,16 +4,13 @@ from typing import Any, Dict
 from PIL import Image
 
 from diffusers import (
-    # StableDiffusionXLControlNetInpaintPipeline,
     StableDiffusionXLControlNetImg2ImgPipeline,
     StableDiffusionXLImg2ImgPipeline,
-    ControlNetModel, UniPCMultistepScheduler,
-    EulerAncestralDiscreteScheduler,
-    AutoencoderKL, DDIMScheduler
+    ControlNetModel, UniPCMultistepScheduler, DDIMScheduler
 )
 from transformers import AutoImageProcessor, SegformerForSemanticSegmentation
 
-from controlnet_aux import PidiNetDetector, HEDdetector
+from controlnet_aux import MidasDetector
 
 import runpod
 from runpod.serverless.utils.rp_download import file as rp_file
@@ -32,24 +29,6 @@ logger = RunPodLogger()
 
 
 # ------------------------- ФУНКЦИИ-ПОМОЩНИКИ ----------------------------- #
-def nms(x, t, s):
-    x = cv2.GaussianBlur(x.astype(np.float32), (0, 0), s)
-
-    f1 = np.array([[0, 0, 0], [1, 1, 1], [0, 0, 0]], dtype=np.uint8)
-    f2 = np.array([[0, 1, 0], [0, 1, 0], [0, 1, 0]], dtype=np.uint8)
-    f3 = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.uint8)
-    f4 = np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=np.uint8)
-
-    y = np.zeros_like(x)
-
-    for f in [f1, f2, f3, f4]:
-        np.putmask(y, cv2.dilate(x, kernel=f) == x, x)
-
-    z = np.zeros_like(y, dtype=np.uint8)
-    z[y > t] = 255
-    return z
-
-
 def url_to_pil(url: str) -> Image.Image:
     info = rp_file(url)
     return Image.open(info["file_path"]).convert("RGB")
@@ -92,24 +71,14 @@ def compute_work_resolution(w, h, max_side=1024):
 #     use_safetensors=True
 # )
 
-# controlnet = ControlNetModel.from_pretrained(
-#                 "diffusers/controlnet-canny-sdxl-1.0",
-#                 torch_dtype=DTYPE
-#             )
-
 controlnet = ControlNetModel.from_pretrained(
-    "xinsir/controlnet-scribble-sdxl-1.0",
-    torch_dtype=torch.float16
-)
+                "diffusers/controlnet-canny-sdxl-1.0",
+                torch_dtype=DTYPE
+            )
 
 # cn_seg = ControlNetModel.from_pretrained(
 #     "SargeZT/sdxl-controlnet-seg",
 #     torch_dtype=DTYPE)
-eulera_scheduler = EulerAncestralDiscreteScheduler.from_pretrained(
-    "stabilityai/stable-diffusion-xl-base-1.0",
-    subfolder="scheduler")
-
-vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
 
 
 PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
@@ -125,8 +94,6 @@ PIPELINE = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
     add_watermarker=False,
     use_safetensors=True,
     resume_download=True,
-    scheduler=eulera_scheduler,
-    vae=vae,
 )
 PIPELINE.scheduler = UniPCMultistepScheduler.from_config(
     PIPELINE.scheduler.config)
@@ -152,24 +119,30 @@ CURRENT_LORA = "None"
 # image_segmentor = SegformerForSemanticSegmentation.from_pretrained(
 #     "nvidia/segformer-b5-finetuned-ade-640-640"
 # )
-processor = HEDdetector.from_pretrained('lllyasviel/Annotators')
 
 
-def make_scribble_condition(image: Image.Image) -> Image.Image:
-    controlnet_img = processor(image, scribble=False)
-    # controlnet_img.save("a hed detect path for an image")
+def resize_dimensions(dimensions, target_size):
+    """
+    Resize PIL to target size while maintaining aspect ratio
+    If smaller than target size leave it as is
+    """
+    width, height = dimensions
 
-    # following is some processing to simulate human sketch draw, different threshold can generate different width of lines
-    controlnet_img = np.array(controlnet_img)
-    controlnet_img = nms(controlnet_img, 127, 3)
-    controlnet_img = cv2.GaussianBlur(controlnet_img, (0, 0), 3)
+    # Check if both dimensions are smaller than the target size
+    if width < target_size and height < target_size:
+        return dimensions
 
-    # higher threshold, thiner line
-    random_val = int(round(random.uniform(0.01, 0.10), 2) * 255)
-    controlnet_img[controlnet_img > random_val] = 255
-    controlnet_img[controlnet_img < 255] = 0
-    controlnet_img = Image.fromarray(controlnet_img)
-    return controlnet_img
+    # Determine the larger side
+    if width > height:
+        # Calculate the aspect ratio
+        aspect_ratio = height / width
+        # Resize dimensions
+        return (target_size, int(target_size * aspect_ratio))
+    else:
+        # Calculate the aspect ratio
+        aspect_ratio = width / height
+        # Resize dimensions
+        return (int(target_size * aspect_ratio), target_size)
 
 
 # ------------------------- ОСНОВНОЙ HANDLER ------------------------------ #
@@ -187,7 +160,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         negative_prompt = payload.get(
             "negative_prompt", "")
         img_strength = payload.get(
-            "img_strength", 0.5)
+            "img_strength", 4.0)
         guidance_scale = float(payload.get(
             "guidance_scale", 7.5))
         steps = min(int(payload.get(
@@ -209,25 +182,18 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             "refiner_scale", 7.5))
 
         # control scales
-        scribble_scale = float(payload.get(
-            "scribble_scale",
-            0.9)
-        )
-        scribble_guidance_start = float(payload.get(
-            "scribble_guidance_start",
-            0.0)
-         )
-        scribble_guidance_end = float(payload.get(
-            "scribble_guidance_end",
-            1.0)
-        )
+        canny_scale = float(payload.get(
+            "canny_conditioning_scale", 0.9))
+        canny_guidance_start = float(payload.get(
+            "canny_guidance_start", 0.9))
+        canny_guidance_end = float(payload.get(
+            "canny_guidance_end", 0.9))
         # ---------- препроцессинг входа ------------
 
         image_pil = url_to_pil(image_url)
 
         # ---- canny --------------------------------------------------------------
-        # control_image = make_canny_condition(image_pil)
-        control_image = make_scribble_condition(image_pil)
+        control_image = make_canny_condition(image_pil)
 
         orig_w, orig_h = image_pil.size
         work_w, work_h = compute_work_resolution(orig_w, orig_h, TARGET_RES)
@@ -241,9 +207,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             negative_prompt=negative_prompt,
             image=image_pil,
             control_image=canny_cond,
-            controlnet_conditioning_scale=scribble_scale,
-            control_guidance_start=scribble_guidance_start,
-            control_guidance_end=scribble_guidance_end,
+            controlnet_conditioning_scale=canny_scale,
+            control_guidance_start=canny_guidance_start,
+            control_guidance_end=canny_guidance_end,
             num_inference_steps=steps,
             guidance_scale=guidance_scale,
             generator=generator,

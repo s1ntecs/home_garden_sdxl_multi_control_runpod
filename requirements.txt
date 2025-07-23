@@ -1,6 +1,6 @@
 diffusers==0.34.0
 transformers==4.45.0
-xformers==0.0.28.post1
+# xformers==0.0.28.post1
 accelerate
 opencv-python
 scipy

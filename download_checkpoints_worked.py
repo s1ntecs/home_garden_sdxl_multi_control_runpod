@@ -6,10 +6,9 @@ from diffusers import (
     UniPCMultistepScheduler,
     StableDiffusionXLControlNetImg2ImgPipeline,
     AutoencoderKL,
-    StableDiffusionXLImg2ImgPipeline,
-    EulerAncestralDiscreteScheduler
+    StableDiffusionXLImg2ImgPipeline
 )
-from controlnet_aux import MidasDetector, HEDdetector
+from controlnet_aux import MidasDetector
 from transformers import (AutoImageProcessor,
                           SegformerForSemanticSegmentation)
 
@@ -46,13 +45,9 @@ def get_pipeline():
     #     torch_dtype=torch.float16,
     #     use_safetensors=True
     # )
-    # controlnet = ControlNetModel.from_pretrained(
-    #     "diffusers/controlnet-canny-sdxl-1.0",
-    #     torch_dtype=DTYPE,
-    # )
     controlnet = ControlNetModel.from_pretrained(
-        "xinsir/controlnet-scribble-sdxl-1.0",
-        torch_dtype=torch.float16
+        "diffusers/controlnet-canny-sdxl-1.0",
+        torch_dtype=DTYPE,
     )
 
     # cn_seg = ControlNetModel.from_pretrained(
@@ -63,11 +58,6 @@ def get_pipeline():
     # lineart_cn = ControlNetModel.from_pretrained(
     #     "ShermanG/ControlNet-Standard-Lineart-for-SDXL",
     #     torch_dtype=torch.float16)
-
-    eulera_scheduler = EulerAncestralDiscreteScheduler.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        subfolder="scheduler"
-    )
 
     vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix",
                                         torch_dtype=torch.float16,
@@ -108,7 +98,6 @@ def get_pipeline():
     #     "nvidia/segformer-b5-finetuned-ade-640-640"
     # )
     # line_det = LineartDetector.from_pretrained("lllyasviel/Annotators")
-    HEDdetector.from_pretrained('lllyasviel/Annotators')
 
 
 if __name__ == "__main__":
